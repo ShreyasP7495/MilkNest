@@ -1,0 +1,50 @@
+services:
+  app:
+    build: .
+    container_name: milknest-app
+    env_file: .env
+    environment:
+      DB_HOST: db
+      REDIS_HOST: redis
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    container_name: milknest-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-milk}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-milk123}
+      POSTGRES_DB: ${DB_NAME:-milknest}
+    ports:
+      - "5432:5432"
+    volumes:
+      - milknest_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-milk} -d ${DB_NAME:-milknest}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: milknest-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - milknest_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  milknest_pg:
+  milknest_redis:

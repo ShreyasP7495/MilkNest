@@ -1,0 +1,172 @@
+MilkNest — API Specification (MVP)
+1. Overview
+This document defines REST API endpoints for the MilkNest MVP system. The APIs support mobile and web applications for customers, admins, and delivery partners.
+Base URL:
+/api/v1
+Authentication:
+	•	JWT-based auth for all protected APIs
+	•	OTP-based login for initial authentication
+
+2. Authentication APIs
+2.1 Send OTP
+POST /auth/send-otp
+Request:
+{   "phone_number": "string" }
+Response:
+{   "message": "OTP sent successfully",   "request_id": "string" }
+
+2.2 Verify OTP
+POST /auth/verify-otp
+Request:
+{   "phone_number": "string",   "otp": "string" }
+Response:
+{   "access_token": "jwt",   "refresh_token": "jwt",   "user": {     "id": "uuid",     "role": "customer|admin|delivery"   } }
+
+3. User APIs
+3.1 Get Profile
+GET /users/me
+Response:
+{   "id": "uuid",   "name": "string",   "phone_number": "string",   "role": "string" }
+
+3.2 Update Profile
+PUT /users/me
+Request:
+{   "name": "string",   "email": "string" }
+
+4. Address APIs
+4.1 Add Address
+POST /addresses
+Request:
+{   "house_number": "string",   "street": "string",   "city": "string",   "state": "string",   "pincode": "string",   "latitude": 0.0,   "longitude": 0.0 }
+
+4.2 Get Addresses
+GET /addresses
+
+4.3 Update Address
+PUT /addresses/{id}
+
+4.4 Delete Address
+DELETE /addresses/{id}
+
+5. Product APIs
+5.1 Get Products
+GET /products
+Response:
+[   {     "id": "uuid",     "name": "Amul Milk",     "price": 50,     "stock_quantity": 1000   } ]
+
+5.2 Get Product Details
+GET /products/{id}
+
+6. Subscription APIs
+6.1 Create Subscription
+POST /subscriptions
+Request:
+{   "product_id": "uuid",   "quantity": 2,   "frequency": "daily|weekly|monthly",   "delivery_time": "06:00 AM",   "address_id": "uuid",   "start_date": "YYYY-MM-DD" }
+
+6.2 Get Subscriptions
+GET /subscriptions
+
+6.3 Get Subscription Details
+GET /subscriptions/{id}
+
+6.4 Update Subscription
+PUT /subscriptions/{id}
+Request:
+{   "quantity": 3,   "delivery_time": "07:00 AM",   "address_id": "uuid" }
+
+6.5 Pause Subscription
+POST /subscriptions/{id}/pause
+
+6.6 Cancel Subscription
+POST /subscriptions/{id}/cancel
+
+7. Order APIs
+7.1 Get Orders
+GET /orders
+
+7.2 Get Order Details
+GET /orders/{id}
+
+7.3 Admin: Get All Orders
+GET /admin/orders
+
+8. Payment APIs
+8.1 Create Payment Order
+POST /payments/create
+Request:
+{   "order_id": "uuid",   "method": "upi|card|netbanking|bnpl" }
+
+8.2 Payment Webhook (Razorpay)
+POST /payments/webhook
+
+8.3 Get Payment Status
+GET /payments/{id}
+
+9. Delivery APIs
+9.1 Assign Delivery Partner (Admin)
+POST /delivery/assign
+Request:
+{   "order_id": "uuid",   "delivery_partner_id": "uuid" }
+
+9.2 Update Delivery Status
+POST /delivery/status
+Request:
+{   "order_id": "uuid",   "status": "picked|in_transit|delivered|failed",   "latitude": 0.0,   "longitude": 0.0 }
+
+9.3 Track Delivery
+GET /delivery/track/{order_id}
+Response:
+{   "order_id": "uuid",   "current_status": "in_transit",   "live_location": {     "lat": 0.0,     "lng": 0.0   } }
+
+10. Complaint APIs
+10.1 Create Complaint
+POST /complaints
+Request:
+{   "order_id": "uuid",   "type": "late_delivery|damaged_product|other",   "description": "string" }
+
+10.2 Get Complaints
+GET /complaints
+
+10.3 Resolve Complaint (Admin)
+POST /complaints/{id}/resolve
+
+11. Notification APIs
+11.1 Send Notification (Internal)
+POST /notifications/send
+
+11.2 Get Notifications
+GET /notifications
+
+12. Admin APIs
+12.1 Dashboard Stats
+GET /admin/dashboard
+Response:
+{   "total_users": 0,   "active_subscriptions": 0,   "daily_orders": 0,   "revenue": 0 }
+
+12.2 Inventory Update
+POST /admin/inventory/update
+
+13. Offer APIs
+13.1 Get Offers
+GET /offers
+
+14. Health Check
+GET /health
+Response:
+{   "status": "ok" }
+
+15. Error Format (Standard)
+{   "error": "string",   "message": "string",   "code": 400 }
+
+16. Notes
+	•	All timestamps in IST
+	•	All APIs require Authorization header except auth endpoints
+	•	Rate limiting enabled for OTP APIs
+	•	Webhooks must be verified using signature validation
+
+17. Future Extensions
+	•	WhatsApp ordering APIs
+	•	AI chatbot endpoints
+	•	Route optimization service APIs
+	•	Franchise onboarding APIs
+	•	Multi-product grocery expansion APIs

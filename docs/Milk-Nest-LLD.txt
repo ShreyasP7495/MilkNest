@@ -1,0 +1,168 @@
+MilkNest — Low Level Design (LLD)
+1. Overview
+This document defines the low-level system design for MilkNest MVP, including:
+	•	Service-level architecture
+	•	Class/module structure (Golang backend)
+	•	Database access layer design
+	•	Core business logic implementation
+	•	Background jobs and schedulers
+	•	Sequence flows
+	•	Error handling strategy
+
+2. Backend Architecture Style
+We will use a modular monolith (MVP stage) in Golang.
+Why Modular Monolith?
+	•	Faster development
+	•	Easier debugging
+	•	Lower infrastructure cost
+	•	Can be split into microservices later
+
+3. Backend Folder Structure (Golang)
+backend/ │ ├── cmd/ │   └── server/ │       └── main.go │ ├── internal/ │   ├── auth/ │   │   ├── handler.go │   │   ├── service.go │   │   ├── repository.go │   │   └── model.go │   │ │   ├── users/ │   ├── subscriptions/ │   ├── orders/ │   ├── payments/ │   ├── inventory/ │   ├── delivery/ │   ├── notifications/ │   ├── complaints/ │   └── offers/ │ ├── pkg/ │   ├── db/ │   ├── redis/ │   ├── logger/ │   ├── middleware/ │   └── utils/ │ ├── configs/ ├── migrations/ └── go.mod
+
+4. Layered Architecture (Per Module)
+Each module follows 4 layers:
+1. Handler Layer (HTTP)
+	•	Input validation
+	•	Request parsing
+	•	Response formatting
+2. Service Layer (Business Logic)
+	•	Core logic
+	•	Validation rules
+	•	Transactions
+3. Repository Layer (DB Access)
+	•	SQL queries
+	•	ORM or raw SQL
+4. Model Layer (Structs)
+	•	DB models
+	•	DTOs
+
+5. Core Domain Models
+5.1 User
+type User struct {     ID          string     Name        string     PhoneNumber string     Role        string // customer, admin, delivery     CreatedAt   time.Time }
+
+5.2 Subscription
+type Subscription struct {     ID           string     UserID       string     ProductID    string     Quantity     int     Frequency    string // daily, weekly, monthly     DeliveryTime string     AddressID    string     Status       string // active, paused, cancelled }
+
+5.3 Order
+type Order struct {     ID             string     SubscriptionID string     DeliveryDate   time.Time     Quantity       int     Status         string // pending, assigned, delivered, failed }
+
+5.4 Inventory
+type Inventory struct {     ID          string     ProductID   string     HubID       string     Quantity    int }
+
+6. Subscription Engine (Core Logic)
+Rule Enforcement
+	•	Max 10 packets/day per household
+Implementation
+type SubscriptionService struct {     repo SubscriptionRepository     inventoryRepo InventoryRepository }  func (s *SubscriptionService) CreateSubscription(req CreateSubscriptionRequest) error {      total := req.Quantity * estimateDays(req.Frequency)      if req.Quantity > 10 {         return errors.New("max 10 packets per day allowed")     }      // 1. Save subscription     sub := Subscription{...}     s.repo.Save(sub)      // 2. Reserve inventory     s.inventoryRepo.Reserve(req.ProductID, total)      return nil }
+
+7. Order Generation Engine (CRON JOB)
+Runs Daily at 12:00 AM
+Flow
+Subscriptions → Active Users → Generate Orders → Save Orders
+Implementation
+func GenerateDailyOrders() {     subs := subscriptionRepo.GetActiveSubscriptions()      for _, sub := range subs {         order := Order{             SubscriptionID: sub.ID,             DeliveryDate: time.Now().Add(24 * time.Hour),             Quantity: sub.Quantity,             Status: "pending",         }          orderRepo.Save(order)     } }
+
+8. Inventory Reservation Logic
+Problem
+Avoid overbooking milk stock.
+Solution
+	•	Reserve inventory at subscription creation
+	•	Deduct inventory at order generation
+func Reserve(productID string, qty int) error {     current := db.GetStock(productID)      if current < qty {         return errors.New("insufficient stock")     }      db.UpdateStock(productID, current-qty)      return nil }
+
+9. Delivery Assignment System
+Logic
+	•	Admin assigns manually in MVP
+	•	Later auto-assignment via routing
+Structure
+type Delivery struct {     OrderID string     PartnerID string     Status string     Location GeoPoint }
+
+10. GPS Tracking System
+Flow
+	•	Delivery partner app sends location every 30 seconds
+	•	Backend stores latest location in Redis
+	•	Customer fetches live tracking
+Redis Key
+delivery:{order_id}:location
+
+11. Payment Flow
+Steps
+	•	Create payment order (Razorpay)
+	•	User pays
+	•	Webhook confirms payment
+	•	Mark order as paid
+func HandlePaymentWebhook(event PaymentEvent) {     if event.Status == "success" {         orderRepo.MarkPaid(event.OrderID)     } }
+
+12. Offer Engine
+Rule
+	•	50 packets → 2 free
+	•	100 packets → 5 free
+func CalculateOffer(packets int) int {     if packets >= 100 {         return 5     }     if packets >= 50 {         return 2     }     return 0 }
+
+13. Complaint System
+Flow
+	•	User submits complaint
+	•	Stored in DB
+	•	Admin resolves
+	•	Optional refund triggered
+type Complaint struct {     ID string     OrderID string     Type string     Status string     Description string }
+
+14. Notification System
+Types
+	•	SMS (Twilio/MSG91)
+	•	Push (Firebase)
+Event Driven Design (MVP simple)
+func SendNotification(userID, message string) {     sms.Send(userID, message)     fcm.Push(userID, message) }
+
+15. API Handler Example
+func (h *SubscriptionHandler) Create(w http.ResponseWriter, r *http.Request) {      var req CreateSubscriptionRequest     json.NewDecoder(r.Body).Decode(&req)      err := h.service.CreateSubscription(req)      if err != nil {         http.Error(w, err.Error(), 400)         return     }      json.NewEncoder(w).Encode("success") }
+
+16. Concurrency Handling
+Problem
+Morning order spikes
+Solution
+	•	Use Goroutines for order generation
+	•	Use DB transactions for consistency
+
+17. Transactions Strategy
+Critical flows:
+	•	Subscription creation
+	•	Payment confirmation
+	•	Inventory reservation
+Use:
+BEGIN; COMMIT; ROLLBACK;
+
+18. Error Handling Strategy
+Standard format:
+type AppError struct {     Code    int     Message string }
+
+19. Future Enhancements
+	•	Kafka event bus
+	•	Auto delivery routing
+	•	AI demand forecasting
+	•	Multi-hub inventory balancing
+	•	WhatsApp bot ordering
+
+20. System Architecture Diagram
+High-Level System Architecture (MVP)
+                        ┌──────────────────────────┐                         │      Mobile App          │                         │   (Flutter - iOS/Android)│                         └────────────┬─────────────┘                                      │                         ┌────────────▼─────────────┐                         │       Web App            │                         │   (React / Next.js)      │                         └────────────┬─────────────┘                                      │                            ┌─────────▼─────────┐                            │   API Gateway     │                            │ (Nginx / AWS API) │                            └─────────┬─────────┘                                      │         ┌────────────────────────────┼────────────────────────────┐         │                            │                            │ ┌───────▼────────┐       ┌──────────▼──────────┐       ┌──────────▼──────────┐ │ Auth Service   │       │ Subscription Service│       │ Order Service       │ └───────┬────────┘       └──────────┬──────────┘       └──────────┬──────────┘         │                            │                            │         │                ┌──────────▼──────────┐                 │         │                │ Inventory Service   │                 │         │                └──────────┬──────────┘                 │         │                           │                             │         │                ┌──────────▼──────────┐                 │         │                │ Payment Service     │                 │         │                └──────────┬──────────┘                 │         │                           │                             │         │                ┌──────────▼──────────┐                 │         │                │ Delivery Service    │─────────────────┘         │                └──────────┬──────────┘         │                           │         │                ┌──────────▼──────────┐         │                │ Notification Svc    │         │                └──────────┬──────────┘         │                           │         │                ┌──────────▼──────────┐         └───────────────▶│ Support/Chat Svc    │                          └──────────┬──────────┘                                     │           ┌────────────────────────────────────────────────────┐           │              Data Layer                           │           │  PostgreSQL | Redis | S3                         │           └────────────────────────────────────────────────────┘
+Data Flow Summary
+	•	Customer places subscription via Mobile/Web App
+	•	Subscription Service validates and stores data
+	•	Inventory Service reserves stock
+	•	Order Service generates daily orders via cron job
+	•	Delivery Service assigns delivery partners
+	•	GPS updates stored in Redis
+	•	Notification Service sends updates to user
+	•	Payment Service handles Razorpay + BNPL flows
+	•	Support Service handles complaints and chat
+
+21. Summary
+MilkNest LLD focuses on:
+	•	Modular backend design in Golang
+	•	Strong subscription + inventory consistency
+	•	Daily order generation system
+	•	Real-time delivery tracking
+	•	Scalable payment and notification system
+This design is optimized for MVP execution with a clear path to microservices scaling.
