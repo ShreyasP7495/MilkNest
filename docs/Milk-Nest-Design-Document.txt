@@ -1,0 +1,248 @@
+MilkNest — System Design Document (MVP)
+1. Overview
+MilkNest is a hyperlocal subscription-based daily milk delivery platform for Indian households. It enables customers to subscribe to milk (initially Nandini and Amul), schedule daily deliveries, and manage flexible subscriptions. Orders are fulfilled through centralized storage hubs and delivered via assigned delivery partners.
+The system supports mobile and web applications with real-time delivery tracking, payments, notifications, and customer support.
+
+2. Goals
+	•	Provide reliable daily milk subscription delivery
+	•	Replace manual milk pickup from local stores
+	•	Enable flexible subscription management (daily/weekly/monthly)
+	•	Support scalable delivery operations via storage hubs
+	•	Provide real-time tracking and notifications
+	•	Ensure high availability during morning peak hours
+
+3. Scope (MVP)
+Customer Features
+	•	OTP-based login
+	•	Address management
+	•	Milk subscription creation
+	•	Modify quantity, timing, address
+	•	Pause/cancel subscription
+	•	Payments (UPI, cards, BNPL with surcharge)
+	•	Order tracking
+	•	Complaint submission
+	•	Notifications (SMS + push)
+Admin Features
+	•	Inventory management
+	•	Approve/reject subscriptions
+	•	Assign delivery partners
+	•	View orders and revenue
+	•	Handle complaints
+Delivery Partner Features
+	•	Assigned delivery route
+	•	Mark delivery status
+	•	GPS tracking
+
+4. High-Level Architecture
+Mobile App (Flutter)       Web App (React)             \               /              \             /              API Gateway (Nginx / AWS API Gateway)                       | ------------------------------------------------- |                 Backend Services               | |------------------------------------------------| | Auth Service                                  | | Subscription Service                          | | Order Service                                 | | Inventory Service                             | | Payment Service                               | | Delivery Service                              | | Notification Service                          | | Support/Chat Service                          | -------------------------------------------------                       |         -----------------------------------         | PostgreSQL | Redis | S3 Storage |         -----------------------------------
+
+5. Tech Stack
+Frontend
+	•	Mobile: Flutter
+	•	Web: React.js + Next.js
+Backend
+	•	Golang (Microservices architecture)
+Database
+	•	PostgreSQL (primary data store)
+	•	Redis (cache, sessions, OTP, tracking)
+Infrastructure
+	•	AWS (initially ECS/Fargate)
+	•	S3 (images, complaints)
+	•	CloudWatch (logging/monitoring)
+Integrations
+	•	Razorpay (Payments: UPI, cards, BNPL)
+	•	Firebase Cloud Messaging (Push notifications)
+	•	Twilio / MSG91 (SMS)
+	•	Google Maps API (GPS tracking & routing)
+
+6. Core Services Design
+6.1 Auth Service
+Responsibilities:
+	•	OTP login
+	•	JWT token generation
+Tables:
+	•	users
+
+6.2 Subscription Service
+Responsibilities:
+	•	Create/manage subscriptions
+	•	Validate max 10 packets/day rule
+	•	Pause/cancel subscription
+Tables:
+	•	subscriptions
+	•	offers
+
+6.3 Order Service
+Responsibilities:
+	•	Generate daily orders from subscriptions (cron job at midnight)
+	•	Maintain order lifecycle
+Tables:
+	•	orders
+
+6.4 Inventory Service
+Responsibilities:
+	•	Manage milk stock per hub
+	•	Reserve inventory for subscriptions
+	•	Prevent overbooking
+Tables:
+	•	products
+	•	inventory
+
+6.5 Payment Service
+Responsibilities:
+	•	Payment processing via Razorpay
+	•	Handle BNPL surcharge (10%)
+	•	Webhook processing
+Tables:
+	•	payments
+
+6.6 Delivery Service
+Responsibilities:
+	•	Assign delivery partners
+	•	Track GPS location
+	•	Update delivery status
+Tables:
+	•	delivery_tracking
+
+6.7 Notification Service
+Responsibilities:
+	•	SMS notifications
+	•	Push notifications
+	•	Event-based alerts
+
+6.8 Support Service
+Responsibilities:
+	•	Customer complaints
+	•	Live chat support (MVP: Firebase)
+Tables:
+	•	complaints
+
+7. Database Design
+Users
+	•	id (UUID)
+	•	name
+	•	phone_number
+	•	role (customer/admin/delivery)
+Addresses
+	•	id
+	•	user_id
+	•	lat/long
+	•	pincode
+Products
+	•	id
+	•	name (Amul/Nandini)
+	•	price
+	•	stock_quantity
+Subscriptions
+	•	id
+	•	user_id
+	•	product_id
+	•	quantity
+	•	frequency
+	•	delivery_time
+	•	status
+Orders
+	•	id
+	•	subscription_id
+	•	delivery_date
+	•	status
+Payments
+	•	id
+	•	order_id
+	•	amount
+	•	status
+Complaints
+	•	id
+	•	user_id
+	•	order_id
+	•	status
+Delivery Tracking
+	•	id
+	•	order_id
+	•	lat
+	•	long
+	•	timestamp
+
+8. Key Workflows
+8.1 Subscription Creation
+	•	User selects milk + quantity + schedule
+	•	System validates limit (<=10 packets/day)
+	•	Subscription stored
+	•	Inventory reserved
+	•	Payment initiated
+
+8.2 Daily Order Generation
+	•	Cron job runs at midnight
+	•	Converts active subscriptions → orders
+	•	Assigns delivery slots
+
+8.3 Delivery Flow
+	•	Admin assigns delivery partner
+	•	Partner picks items from hub
+	•	GPS tracking enabled
+	•	Delivery marked complete
+
+8.4 Complaint Flow
+	•	User raises complaint
+	•	Support team reviews
+	•	Refund/resolution provided
+
+9. Business Rules
+	•	Max 10 packets per household per day
+	•	BNPL adds 10% surcharge
+	•	Free offers:
+	•	50 packets → +2 free
+	•	100 packets → +5 free
+	•	Subscription can be paused anytime
+
+10. Scalability Design
+MVP Stage
+	•	Single region deployment
+	•	Monolithic backend (modular services)
+Scaling Stage
+	•	Move to microservices
+	•	Add Kafka event streaming
+	•	Multi-region delivery hubs
+	•	Read replicas for DB
+
+11. Security
+	•	OTP authentication
+	•	JWT-based session management
+	•	HTTPS everywhere
+	•	Payment tokenization (Razorpay)
+	•	Rate limiting (Redis)
+
+12. Monitoring
+	•	AWS CloudWatch logs
+	•	Prometheus metrics (future)
+	•	Alerts for:
+	•	failed deliveries
+	•	payment failures
+	•	inventory shortages
+
+13. MVP Roadmap
+Phase 1 (Weeks 1-2)
+	•	Auth
+	•	User + Address
+Phase 2 (Weeks 3-4)
+	•	Subscription system
+	•	Product + inventory
+Phase 3 (Weeks 5-6)
+	•	Orders + delivery system
+	•	Payments
+Phase 4 (Weeks 7-8)
+	•	Notifications
+	•	Admin dashboard
+	•	Complaints/chat
+
+14. Future Enhancements
+	•	AI demand prediction
+	•	WhatsApp ordering bot
+	•	Multi-product grocery expansion
+	•	Franchise-based hubs
+	•	Dynamic pricing
+	•	Route optimization engine
+	•	Voice-based ordering
+
+15. Conclusion
+MilkNest is designed as a scalable hyperlocal subscription commerce platform optimized for daily essential delivery. The MVP focuses on reliability, inventory control, and predictable delivery scheduling while maintaining a modular architecture for future expansion.
