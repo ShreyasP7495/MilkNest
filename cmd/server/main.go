@@ -46,12 +46,18 @@ func main() {
 		log.Fatal().Err(err).Msg("postgres init failed")
 	}
 	defer pg.Close()
+	log.Info().
+		Str("host", cfg.DB.Host).
+		Str("name", cfg.DB.Name).
+		Int("max_open_conns", cfg.DB.MaxOpenConns).
+		Msg("postgres connected")
 
 	rdb, err := rediscli.New(cfg.Redis)
 	if err != nil {
 		log.Fatal().Err(err).Msg("redis init failed")
 	}
 	defer rdb.Close()
+	log.Info().Str("addr", cfg.Redis.Addr()).Int("db", cfg.Redis.DB).Msg("redis connected")
 
 	// --- Repositories -------------------------------------------------------
 	authRepo := auth.NewRepository(pg)
@@ -104,6 +110,7 @@ func main() {
 		inventory:     inventory.NewHandler(invSvc),
 		admin:         admin.NewHandler(adminSvc),
 	}
+	log.Debug().Msg("repositories, services and handlers wired")
 
 	// --- Cron ---------------------------------------------------------------
 	generator := orders.NewOrderGenerator(pg, subsRepo, invRepo, ordersRepo)
@@ -112,10 +119,15 @@ func main() {
 		log.Fatal().Err(err).Msg("cron start failed")
 	}
 	defer cronRunner.Stop()
+	log.Info().
+		Str("order_gen_spec", cfg.Cron.OrderGenSpec).
+		Str("timezone", cfg.Cron.Timezone).
+		Msg("cron scheduler started")
 
 	// --- HTTP server --------------------------------------------------------
 	if cfg.App.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
+		log.Debug().Msg("gin release mode enabled")
 	}
 	r := buildRouter(cfg, rdb, h)
 	srv := &http.Server{
@@ -133,12 +145,16 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Info().Msg("shutdown requested")
+	sig := <-quit
+	log.Info().Str("signal", sig.String()).Msg("shutdown requested")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("graceful shutdown failed")
+	} else {
+		log.Info().Msg("http server stopped cleanly")
 	}
+
+	log.Info().Msg("milknest stopped")
 }
